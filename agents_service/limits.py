@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from agents_service.config import Settings
-from agents_service.context import RequestContext
+from agents_service.context import AGENT_ASSISTANT, RequestContext
 from agents_service.db import Database
 
 REASON_MESSAGES = "messages_per_conversation"
@@ -68,9 +68,13 @@ class Limits:
         )
         return int(row["n"]) if row and row["n"] is not None else 0
 
+    def budget(self, agent: int) -> int:
+        """Tokens por dia segun el agente: LIMIT_TOKENS_PER_DAY_SALES o LIMIT_TOKENS_PER_DAY_ASSISTANT."""
+        return self._s.limit_tokens_per_day_assistant if agent == AGENT_ASSISTANT else self._s.limit_tokens_per_day_sales
+
     async def check(self, context: RequestContext, conversation_id: str, is_new_conversation: bool) -> LimitCheck:
         """Orden: presupuesto del dia, conversaciones por IP (solo al abrir una), mensajes del hilo."""
-        if await self.tokens_today(context.agent) >= self._s.limit_tokens_per_day_sales:
+        if await self.tokens_today(context.agent) >= self.budget(context.agent):
             return LimitCheck(False, REASON_TOKENS)
         if is_new_conversation and context.ip_hash:
             # la conversacion nueva ya esta guardada cuando se llama: cuenta ella misma

@@ -9,10 +9,10 @@ OpenAI) responde 503 con el envelope del API.
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
-from chatkit.server import StreamingResult
+from fastapi.responses import JSONResponse
 
 from agents_service.context import AGENT_SALES, CHANNEL_WEB, RequestContext, hash_ip
+from agents_service.routers._chatkit import chatkit_response
 
 router = APIRouter()
 
@@ -32,18 +32,7 @@ async def chatkit(request: Request) -> Response:
         return JSONResponse({"data": None, "msg": "Agente de ventas no configurado", "error": "OPENAI_API_KEY_SALES"}, status_code=503)
     settings = request.app.state.settings
     context = RequestContext(agent=AGENT_SALES, channel=CHANNEL_WEB, ip_hash=hash_ip(client_ip(request, settings.trust_proxy)))
-    body = await request.body()
-    try:
-        result = await server.process(body, context)
-    except LookupError as e:  # conversacion o mensaje inexistente
-        return JSONResponse({"data": None, "msg": "Conversación no encontrada", "error": str(e)}, status_code=404)
-    if isinstance(result, StreamingResult):
-        return StreamingResponse(
-            result,
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-    return Response(content=result.json, media_type="application/json")
+    return await chatkit_response(server, await request.body(), context)
 
 
 @router.post("/telegram")

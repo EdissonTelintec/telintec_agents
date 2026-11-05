@@ -49,6 +49,7 @@ class Settings:
     # OpenAI (un proyecto por agente)
     openai_api_key_sales: str | None
     openai_api_key_assistant: str | None
+    openai_vector_store_id: str | None  # File Search del asistente (scripts/sync_kb.py); vacio = solo guias locales
     model: str
     model_guardrail: str
     # HTTP
@@ -58,6 +59,8 @@ class Settings:
     limit_conversations_per_ip_day: int
     limit_tokens_per_day_sales: int
     limit_output_tokens: int
+    limit_tokens_per_day_assistant: int  # presupuesto diario del asistente de la webapp
+    limit_output_tokens_assistant: int
     # Ventas y correo (SES: misma identidad remitente que el API)
     sales_whatsapp_url: str
     sales_emails: tuple[str, ...]
@@ -124,6 +127,7 @@ def load_settings(env_file: Path | None = None, environ: Mapping[str, str] | Non
         token_max_lifetime_seconds=int(get("TOKEN_MAX_LIFETIME_SECONDS", str(24 * 60 * 60)) or 24 * 60 * 60),
         openai_api_key_sales=get("OPENAI_API_KEY_SALES"),
         openai_api_key_assistant=get("OPENAI_API_KEY_ASSISTANT"),
+        openai_vector_store_id=get("OPENAI_VECTOR_STORE_ID"),
         model=str(get("OPENAI_MODEL", "gpt-5.4-mini")),
         model_guardrail=str(get("OPENAI_MODEL_GUARDRAIL", "gpt-5.4-nano")),
         cors_origins=_split(get("CORS_ORIGINS")),
@@ -131,6 +135,8 @@ def load_settings(env_file: Path | None = None, environ: Mapping[str, str] | Non
         limit_conversations_per_ip_day=int(get("LIMIT_CONVERSATIONS_PER_IP_DAY", "20") or 20),
         limit_tokens_per_day_sales=int(get("LIMIT_TOKENS_PER_DAY_SALES", "3000000") or 3000000),
         limit_output_tokens=int(get("LIMIT_OUTPUT_TOKENS", "600") or 600),
+        limit_tokens_per_day_assistant=int(get("LIMIT_TOKENS_PER_DAY_ASSISTANT", "1000000") or 1000000),
+        limit_output_tokens_assistant=int(get("LIMIT_OUTPUT_TOKENS_ASSISTANT", "900") or 900),
         sales_whatsapp_url=str(get("SALES_WHATSAPP_URL", "https://wa.me/message/TBYVN75NGL4JJ1")),
         sales_emails=_split(get("SALES_EMAILS")),
         ses_region=get("SES_REGION"),

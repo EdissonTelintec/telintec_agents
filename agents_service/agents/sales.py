@@ -4,7 +4,7 @@
 - Prompt: persona, reglas de venta, `knowledge/servicios.md` y datos de contacto.
 - Tools: `buscar_productos` y `detalle_producto` (solo lectura del catalogo), `registrar_solicitud`
   (solicitud de cotizacion + correo a ventas).
-- Guardrail de entrada con el modelo nano: fuera de tema, abuso o intento de sacar datos internos.
+- Guardrail de entrada con el modelo nano (`agents/guard.py`): fuera de tema, abuso o intento de sacar datos internos.
 - Un cliente de OpenAI propio con la llave del proyecto de ventas.
 """
 
@@ -16,12 +16,14 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from agents import Agent, GuardrailFunctionOutput, ModelSettings, RunContextWrapper, Runner, function_tool, input_guardrail
+from agents import Agent, ModelSettings, RunContextWrapper, function_tool
 from agents.models.openai_responses import OpenAIResponsesModel
 from chatkit.agents import AgentContext
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from agents_service.agents.guard import TopicVerdict, build_topic_guardrail  # noqa: F401 - TopicVerdict se reexporta
+from agents_service.agents.guard import last_user_text as _last_user_text  # noqa: F401 - reexport para pruebas
 from agents_service.catalog import get_product, search_products
 from agents_service.config import ROOT, Settings
 from agents_service.db import Database
@@ -95,11 +97,6 @@ class ProductoSolicitado(BaseModel):
     product_id: int | None = Field(description="id del catálogo si salió de buscar_productos; null si es fuera de catálogo")
 
 
-class TopicVerdict(BaseModel):
-    on_topic: bool = Field(description="true si el mensaje puede atenderlo un agente de ventas de productos y servicios de tecnología")
-    reason: str = Field(description="una frase")
-
-
 _GUARD_INSTRUCTIONS = (
     "Clasifica el último mensaje de un visitante al chat de ventas de Telintec (productos y servicios de redes, "
     "telecomunicaciones, seguridad, videoconferencia, cómputo, software e IA). Es on_topic si pregunta o conversa sobre "
@@ -108,21 +105,6 @@ _GUARD_INSTRUCTIONS = (
     "internos (costos, precios de proveedor, otros clientes) o es un tema sin relación (tareas escolares, política, "
     "programación general, etc.)."
 )
-
-
-def _last_user_text(input_items: str | list[Any]) -> str:
-    if isinstance(input_items, str):
-        return input_items
-    for item in reversed(input_items):
-        if isinstance(item, dict) and item.get("role") == "user":
-            content = item.get("content")
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                texts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") in ("input_text", "text")]
-                if texts:
-                    return "\n".join(texts)
-    return ""
 
 
 def build_sales_agent(settings: Settings, db: Database) -> Agent[AgentContext]:
@@ -199,28 +181,7 @@ def build_sales_agent(settings: Settings, db: Database) -> Agent[AgentContext]:
             await mark_notified(db, request_id, now, settings.db_agents)
         return {"ok": True, "folio": request_id, "aviso_interno": bool(notification_id), "correo_enviado": sent}
 
-    guard_agent = Agent[AgentContext](
-        name="guardia de tema",
-        instructions=_GUARD_INSTRUCTIONS,
-        output_type=TopicVerdict,
-        model=guard_model,
-        model_settings=ModelSettings(max_tokens=80),
-    )
-
-    @input_guardrail
-    async def tema_guardrail(
-        ctx: RunContextWrapper[AgentContext], agent: Agent[Any], input_items: str | list[Any]
-    ) -> GuardrailFunctionOutput:
-        text = _last_user_text(input_items).strip()
-        if not text or len(text) < 3:
-            return GuardrailFunctionOutput(output_info=None, tripwire_triggered=False)
-        try:
-            result = await Runner.run(guard_agent, text[:1000], context=ctx.context)
-            verdict = result.final_output_as(TopicVerdict)
-        except Exception as e:  # noqa: BLE001 - si el guardia falla, no se bloquea al visitante
-            log.warning("guardrail fallo: %s", e)
-            return GuardrailFunctionOutput(output_info=None, tripwire_triggered=False)
-        return GuardrailFunctionOutput(output_info=verdict, tripwire_triggered=not verdict.on_topic)
+    tema_guardrail = build_topic_guardrail("guardia de tema", _GUARD_INSTRUCTIONS, guard_model, log)
 
     return Agent[AgentContext](
         name=AGENT_NAME,

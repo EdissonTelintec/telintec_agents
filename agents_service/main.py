@@ -77,6 +77,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.telegram_channel = None
         log.warning("OPENAI_API_KEY_SALES no esta: /agents/sales/chatkit respondera 503")
 
+    # Asistente de la webapp (F3): mismo servidor de ChatKit con el agente de knowledge/help/.
+    app.state.assistant_server = None
+    app.state.help_base = None
+    if settings.openai_api_key_assistant:
+        from agents import set_tracing_export_api_key
+
+        from agents_service.agents.assistant import build_assistant_agent
+        from agents_service.agents.assistant import fixed_text as assistant_fixed_text
+        from agents_service.knowledge import HelpBase
+
+        help_base = HelpBase.load()
+        if not len(help_base):
+            log.warning("knowledge/help/ sin guias validas: el asistente solo sabra lo que dice su prompt")
+        app.state.help_base = help_base
+        assistant_agent = build_assistant_agent(settings, help_base)
+        app.state.assistant_server = TelintecChatKitServer(
+            app.state.store,
+            settings,
+            app.state.limits,
+            agent_factory=lambda _ctx: assistant_agent,
+            fixed_text=lambda kind: assistant_fixed_text(kind, settings),
+        )
+        if not settings.openai_api_key_sales:
+            # la llave de traces del SDK es global: con las dos llaves se exporta con la de ventas
+            set_tracing_export_api_key(settings.openai_api_key_assistant)
+    else:
+        log.warning("OPENAI_API_KEY_ASSISTANT no esta: /agents/assistant/chatkit respondera 503")
+
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
