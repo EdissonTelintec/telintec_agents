@@ -1,0 +1,23 @@
+# Python objetivo: 3.12 (venv propio en el servidor de prod). Versiones = las instaladas el 2026-11-05.
+# Las transitivas van fijas en constraints.txt (pip freeze del venv).
+-c constraints.txt
+
+# Agentes y chat
+openai==3.46.0
+openai-agents==0.24.0
+openai-chatkit==1.6.5
+
+# Servidor
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+
+# BD, tokens, configuracion
+aiomysql==0.3.2
+PyJWT==2.15.1
+cryptography==50.0.2
+python-dotenv==1.2.4
+
+# Pruebas
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+httpx==0.28.1

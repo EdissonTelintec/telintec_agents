@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# Secretos y llaves: nunca al repo
+.env
+*.pem
+keys/
+# Herramientas locales
+pyrefly.toml
+.idea/
+.vscode/
+# Configuración local de Claude Code
+.claude/
+CLAUDE.local.md
+.mcp.json
+CLAUDE.md
