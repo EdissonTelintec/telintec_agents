@@ -201,6 +201,16 @@ class MySQLStore(Store[RequestContext]):
             f"DELETE FROM {self._msg} WHERE conversation_id = %s AND message_id = %s", (thread_id, item_id)
         )
 
+    async def last_activity(self, thread_id: str) -> datetime | None:
+        """Fecha (UTC naive) del ultimo mensaje de la conversacion, o de su creacion si no hay mensajes."""
+        row = await self._db.fetch_one(
+            f"SELECT COALESCE(MAX(m.created_at), c.created_at) AS last FROM {self._conv} c "
+            f"LEFT JOIN {self._msg} m ON m.conversation_id = c.conversation_id "
+            "WHERE c.conversation_id = %s GROUP BY c.conversation_id",
+            (thread_id,),
+        )
+        return row["last"] if row and row["last"] else None
+
     async def count_items(self, thread_id: str, item_type: str | None = None) -> int:
         """Mensajes de una conversacion (para el tope por conversacion)."""
         extra = "AND item_type = %s" if item_type else ""

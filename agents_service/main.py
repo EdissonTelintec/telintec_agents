@@ -60,7 +60,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             fixed_text=lambda kind: fixed_text(kind, settings),
             allowed_image_domains=PRODUCT_IMAGE_DOMAINS,
         )
+        app.state.telegram_channel = None
+        if settings.telegram_token:
+            from agents_service.channels.telegram import TelegramChannel, TelegramClient
+
+            app.state.telegram_channel = TelegramChannel(
+                TelegramClient(settings.telegram_token),
+                app.state.store,
+                app.state.limits,
+                settings,
+                sales_agent,
+                fixed_text=lambda kind: fixed_text(kind, settings),
+                session_hours=settings.telegram_session_hours,
+            )
     else:
+        app.state.telegram_channel = None
         log.warning("OPENAI_API_KEY_SALES no esta: /agents/sales/chatkit respondera 503")
 
     if settings.cors_origins:

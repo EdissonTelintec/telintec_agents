@@ -16,3 +16,4 @@ CLAUDE.local.md
 .mcp.json
 CLAUDE.md
 .env.example
+/deploy

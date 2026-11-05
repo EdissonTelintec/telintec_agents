@@ -65,6 +65,11 @@ class Settings:
     ses_sender: str | None
     quote_notify_apps: tuple[str, ...]  # claves de `body.app` de la notificacion interna de una solicitud
     trust_proxy: bool  # True detras de nginx: la IP sale de X-Forwarded-For
+    # Telegram (F2)
+    telegram_token: str | None
+    telegram_webhook_secret: str | None
+    telegram_webhook_url: str
+    telegram_session_hours: int
     # Sincronizacion del catalogo SYSCOM (scripts/sync_catalog.py; docs/catalogo_syscom_sync.md del API)
     catalog_db_user: str | None
     catalog_db_password: str | None
@@ -132,6 +137,10 @@ def load_settings(env_file: Path | None = None, environ: Mapping[str, str] | Non
         ses_sender=get("SES_SENDER"),
         quote_notify_apps=_split(get("QUOTE_NOTIFY_APPS")) or ("administracion", "adminpreventa"),
         trust_proxy=(get("TRUST_PROXY", "0") or "0") not in ("0", "false", "False"),
+        telegram_token=get("TELEGRAM_TOKEN"),
+        telegram_webhook_secret=get("TELEGRAM_WEBHOOK_SECRET"),
+        telegram_webhook_url=str(get("TELEGRAM_WEBHOOK_URL", "https://appinterna.telintec.mx/agents/sales/telegram")),
+        telegram_session_hours=int(get("TELEGRAM_SESSION_HOURS", "24") or 24),
         catalog_db_user=get("CATALOG_DB_USER"),
         catalog_db_password=get("CATALOG_DB_PASSWORD"),
         syscom_client_id=get("SYSCOM_CLIENT_ID"),

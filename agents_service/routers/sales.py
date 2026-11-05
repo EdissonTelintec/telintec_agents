@@ -8,7 +8,7 @@ OpenAI) responde 503 con el envelope del API.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from chatkit.server import StreamingResult
 
@@ -44,3 +44,21 @@ async def chatkit(request: Request) -> Response:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     return Response(content=result.json, media_type="application/json")
+
+
+@router.post("/telegram")
+async def telegram_webhook(request: Request, background: BackgroundTasks) -> Response:
+    """Webhook de Telegram (F2). Verifica el secreto del encabezado y procesa el update en segundo plano:
+    Telegram solo espera un 200 rapido."""
+    channel = getattr(request.app.state, "telegram_channel", None)
+    settings = request.app.state.settings
+    if channel is None or not settings.telegram_webhook_secret:
+        return JSONResponse({"data": None, "msg": "Canal Telegram no configurado", "error": "TELEGRAM_TOKEN"}, status_code=503)
+    if request.headers.get("x-telegram-bot-api-secret-token") != settings.telegram_webhook_secret:
+        return JSONResponse({"data": None, "msg": "No autorizado", "error": "secret_token"}, status_code=403)
+    try:
+        update = await request.json()
+    except ValueError:
+        return JSONResponse({"data": None, "msg": "Cuerpo inválido", "error": "json"}, status_code=400)
+    background.add_task(channel.handle_update, update)
+    return JSONResponse({"ok": True})
