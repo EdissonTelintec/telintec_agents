@@ -9,6 +9,7 @@ import pytest
 from chatkit.types import (
     AssistantMessageContent,
     AssistantMessageItem,
+    ClosedStatus,
     InferenceOptions,
     ThreadMetadata,
     UserMessageItem,
@@ -104,7 +105,7 @@ async def test_thread_and_items_roundtrip(store: MySQLStore):
         assert anon.data == [] and not anon.has_more
 
         loaded.title = "cerrada"
-        loaded.status = type(loaded.status).model_validate({"type": "closed", "reason": "fin"})
+        loaded.status = ClosedStatus(reason="fin")
         await store.save_thread(loaded, ctx)
         again = await store.load_thread(thread.id, ctx)
         assert again.title == "cerrada" and again.status.type == "closed"

@@ -58,9 +58,20 @@ class Settings:
     limit_conversations_per_ip_day: int
     limit_tokens_per_day_sales: int
     limit_output_tokens: int
-    # Ventas
+    # Ventas y correo (SES: misma identidad remitente que el API)
     sales_whatsapp_url: str
     sales_emails: tuple[str, ...]
+    ses_region: str | None
+    ses_sender: str | None
+    quote_notify_apps: tuple[str, ...]  # claves de `body.app` de la notificacion interna de una solicitud
+    trust_proxy: bool  # True detras de nginx: la IP sale de X-Forwarded-For
+    # Sincronizacion del catalogo SYSCOM (scripts/sync_catalog.py; docs/catalogo_syscom_sync.md del API)
+    catalog_db_user: str | None
+    catalog_db_password: str | None
+    syscom_client_id: str | None
+    syscom_client_secret: str | None
+    s3_catalog_bucket: str | None
+    timezone: str  # hora del centro de Mexico para las fechas que escribe el servicio
 
 
 def _split(value: str | None) -> tuple[str, ...]:
@@ -117,4 +128,14 @@ def load_settings(env_file: Path | None = None, environ: Mapping[str, str] | Non
         limit_output_tokens=int(get("LIMIT_OUTPUT_TOKENS", "600") or 600),
         sales_whatsapp_url=str(get("SALES_WHATSAPP_URL", "https://wa.me/message/TBYVN75NGL4JJ1")),
         sales_emails=_split(get("SALES_EMAILS")),
+        ses_region=get("SES_REGION"),
+        ses_sender=get("SES_SENDER"),
+        quote_notify_apps=_split(get("QUOTE_NOTIFY_APPS")) or ("administracion", "adminpreventa"),
+        trust_proxy=(get("TRUST_PROXY", "0") or "0") not in ("0", "false", "False"),
+        catalog_db_user=get("CATALOG_DB_USER"),
+        catalog_db_password=get("CATALOG_DB_PASSWORD"),
+        syscom_client_id=get("SYSCOM_CLIENT_ID"),
+        syscom_client_secret=get("SYSCOM_CLIENT_SECRET"),
+        s3_catalog_bucket=get("S3_CATALOG_BUCKET"),
+        timezone=str(get("SERVICE_TIMEZONE", "America/Mexico_City")),
     )

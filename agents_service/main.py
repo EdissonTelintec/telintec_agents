@@ -3,17 +3,25 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from agents_service.agents.sales import build_sales_agent, fixed_text
 from agents_service.auth import UNAUTHORIZED_MSG, TokenVerifier, Unauthorized
+from agents_service.chat import TelintecChatKitServer
 from agents_service.config import Settings, load_settings
 from agents_service.db import Database
-from agents_service.routers import assistant, health
+from agents_service.limits import Limits
+from agents_service.routers import assistant, health, sales
 from agents_service.store import MySQLStore
+
+log = logging.getLogger("agents")
+
+PRODUCT_IMAGE_DOMAINS = ["ftp3.syscom.mx"]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,12 +37,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.db = Database(settings)
     app.state.store = MySQLStore(app.state.db, settings.db_agents)
+    app.state.limits = Limits(app.state.db, settings)
     app.state.verifier = TokenVerifier(
         settings.token_keys_dir,
         settings.token_kids,
         settings.token_leeway_seconds,
         settings.token_max_lifetime_seconds,
     )
+
+    # Agente virtual de ventas: un solo agente por proceso (las tools cierran sobre db y settings).
+    app.state.sales_server = None
+    if settings.openai_api_key_sales:
+        from agents import set_tracing_export_api_key
+
+        set_tracing_export_api_key(settings.openai_api_key_sales)
+        sales_agent = build_sales_agent(settings, app.state.db)
+        app.state.sales_server = TelintecChatKitServer(
+            app.state.store,
+            settings,
+            app.state.limits,
+            agent_factory=lambda _ctx: sales_agent,
+            fixed_text=lambda kind: fixed_text(kind, settings),
+            allowed_image_domains=PRODUCT_IMAGE_DOMAINS,
+        )
+    else:
+        log.warning("OPENAI_API_KEY_SALES no esta: /agents/sales/chatkit respondera 503")
 
     if settings.cors_origins:
         app.add_middleware(
@@ -50,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse({"data": None, "msg": UNAUTHORIZED_MSG, "error": exc.error}, status_code=401)
 
     app.include_router(health.router, prefix="/agents")
+    app.include_router(sales.router, prefix="/agents/sales")
     app.include_router(assistant.router, prefix="/agents/assistant")
     return app
 

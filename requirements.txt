@@ -11,11 +11,13 @@ openai-chatkit==1.6.5
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
 
-# BD, tokens, configuracion
+# BD, tokens, configuracion, correo (SES)
 aiomysql==0.3.2
 PyJWT==2.15.1
 cryptography==50.0.2
 python-dotenv==1.2.4
+boto3==1.43.124
+tzdata==2026.6  # zonas horarias en Windows (Linux usa las del sistema)
 
 # Pruebas
 pytest==9.2.0

@@ -1,0 +1,26 @@
+# /etc/systemd/system/telintec-agents.service
+# Servicio de agentes (uvicorn) en el servidor de prod, detras de nginx (deploy/nginx-agents.conf).
+# Checkout en /home/ec2-user/opt/telintec_agents y venv propio en /home/ec2-user/opt/env_agents (Python 3.12).
+# El .env del servicio va en /home/ec2-user/opt/telintec_agents/.env (config.py lo busca ahi y luego en la
+# carpeta padre); las llaves publicas token_public_<kid>.pem ya estan en /home/ec2-user/opt, asi que
+# TOKEN_PUBLIC_KEYS_DIR=/home/ec2-user/opt.
+#   sudo systemctl daemon-reload && sudo systemctl enable --now telintec-agents
+#   curl http://127.0.0.1:8100/agents/health   # OK
+[Unit]
+Description=Telintec agents (agente virtual de ventas + asistente de la webapp)
+After=network.target
+
+[Service]
+User=ec2-user
+Group=nginx
+WorkingDirectory=/home/ec2-user/opt/telintec_agents
+Environment="PATH=/home/ec2-user/opt/env_agents/bin:/usr/local/bin:/usr/bin"
+Environment="AGENTS_ENVIRONMENT=prod"
+Environment="TRUST_PROXY=1"
+Environment="TZ=America/Mexico_City"
+ExecStart=/home/ec2-user/opt/env_agents/bin/uvicorn agents_service.main:app --host 127.0.0.1 --port 8100 --workers 1 --timeout-keep-alive 75 --log-level info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

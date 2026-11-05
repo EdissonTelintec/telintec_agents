@@ -93,9 +93,9 @@ class MySQLStore(Store[RequestContext]):
         await self._db.execute(
             f"INSERT INTO {self._conv} "
             "(conversation_id, agent, channel, user_ref, ip_hash, page_context, title, chatkit_meta, status, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE title = VALUES(title), chatkit_meta = VALUES(chatkit_meta), "
-            "status = IF(status = 2, 2, VALUES(status))",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE title = new.title, chatkit_meta = new.chatkit_meta, "
+            "status = IF(agent_conversations.status = 2, 2, new.status)",  # alias `new`: MySQL >= 8.0.19
             (
                 thread.id,
                 context.agent,

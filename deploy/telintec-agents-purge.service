@@ -1,0 +1,12 @@
+# /etc/systemd/system/telintec-agents-purge.service (lo dispara telintec-agents-purge.timer)
+[Unit]
+Description=Telintec agents: borrar conversaciones sin solicitud de mas de 90 dias
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/opt/telintec_agents
+Environment="PATH=/home/ec2-user/opt/env_agents/bin:/usr/local/bin:/usr/bin"
+Environment="AGENTS_ENVIRONMENT=prod"
+Environment="TZ=America/Mexico_City"
+ExecStart=/home/ec2-user/opt/env_agents/bin/python scripts/purge_conversations.py --days 90

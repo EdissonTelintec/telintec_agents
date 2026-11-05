@@ -1,0 +1,11 @@
+# /etc/systemd/system/telintec-agents-purge.timer
+#   sudo systemctl enable --now telintec-agents-purge.timer
+[Unit]
+Description=Telintec agents: retencion diaria (04:00 hora del centro)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 America/Mexico_City
+Persistent=true
+
+[Install]
+WantedBy=timers.target

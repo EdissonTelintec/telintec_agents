@@ -26,13 +26,14 @@ Diseño, decisiones y pendientes: `GUITelintec/docs/agentes_openai.md` y `GUITel
 
 ## Configuración
 
-Copiar `.env.example` a `.env` (en el repo, o en la carpeta padre como el API en prod) y llenarlo. `AGENTS_ENVIRONMENT` tiene que ser `dev` o `prod`; sin eso el servicio no arranca. Las variables del sistema ganan sobre el archivo.
+El servicio lee un `.env` en el repo o en la carpeta padre (como el API en prod); no hay plantilla en el repo: la lista de variables la tiene el lead de back (`CLAUDE.md` local) y `agents_service/config.py` las documenta. `AGENTS_ENVIRONMENT` tiene que ser `dev` o `prod`; sin eso el servicio no arranca. Las variables del sistema ganan sobre el archivo.
 
 ## Correr
 
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt     # Linux: .venv/bin/pip
+# .env con las variables (ver Configuración)
 .venv/Scripts/uvicorn agents_service.main:app --host 127.0.0.1 --port 8100
 curl http://127.0.0.1:8100/agents/health            # OK
 ```
