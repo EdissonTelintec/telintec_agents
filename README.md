@@ -52,3 +52,7 @@ El JWT va crudo, sin `Bearer `, igual que en el API. Tokens HS256 o sin `exp`/`i
 ## Producción (plan, `P-248`)
 
 Unidad systemd `telintec-agents` con uvicorn en `127.0.0.1:8100` en el servidor del API, nginx con `location /agents/` (`proxy_buffering off`, `proxy_read_timeout 120`, `limit_req` por IP) en `appinterna.telintec.mx`. Reemplaza a la unidad `chatbot` vieja. Detalle en `GUITelintec/docs/agentes_openai.md`.
+
+## Guías del asistente de la webapp (equipo de front)
+
+Las guías viven en `knowledge/help/`, una por módulo del menú de la webapp. Formato, reglas de redacción, ejemplo de referencia (`almacen.md`) y pasos para el equipo de front en [`knowledge/help/README.md`](knowledge/help/README.md). Repositorio: `https://github.com/EdissonTelintec/telintec_agents.git`. El front no escribe aquí: redacta en una carpeta dedicada de su propio repositorio y el usuario trae los archivos a `knowledge/help/`.

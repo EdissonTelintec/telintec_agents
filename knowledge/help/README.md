@@ -44,6 +44,7 @@ Si una pantalla tiene subpantallas (`/nuevo`, `/editar`, `/[id]`), van dentro de
 ## Reglas de redacción
 
 - Español neutro, instrucciones directas ("Haz clic en **Nueva solicitud**"). Nada de jerga del código: no mencionar componentes, hooks, endpoints, archivos ni ids de pendientes (`P-NNN`).
+- El objetivo es que el lector sepa **qué puede hacer en cada módulo y cómo**: nada de rutas ni direcciones del API, configuraciones, variables, llaves ni nombres técnicos (decisión del usuario, 2026-11-06). Las rutas de la webapp se citan solo para ubicar la pantalla. Más adelante se integrarán guías basadas en lo que el usuario final ve en el front.
 - Solo lo verificado en el código del front (`src/components/<dominio>/`, `src/constants/`), en sus guías de prueba (`docs/pruebas/`) o en las docs del API (`GUITelintec/docs/`). Lo que no se pudo confirmar se marca con **(por confirmar)** para que el usuario lo revise.
 - Nombres de botones, columnas, pestañas y estados tal como se ven en pantalla.
 - Máximo ~1 200 palabras por archivo; si un módulo da para más, resumir cada pantalla, no omitir pantallas.
@@ -69,3 +70,15 @@ Si una pantalla tiene subpantallas (`/nuevo`, `/editar`, `/[id]`), van dentro de
 | `operaciones.md` | Operaciones (aprobaciones centralizadas y confirmación de horas extra) | `/dashboard/operations`, `/dashboard/confirmaciones` |
 | `lideres.md` | Líderes (cotización de actividad, tabla de remitos / control de reportes) | `/dashboard/lideres`, `/dashboard/administracion/control-reportes` |
 | `usuarios_y_cargos.md` | Cargos, Usuarios del sistema y Bitácoras | `/dashboard/roles`, `/dashboard/usuarios-sistema`, `/dashboard/bitacoras` |
+
+## Para el equipo de front (cómo hacer las guías)
+
+- **Repositorio de referencia (solo lectura para el front):** `https://github.com/EdissonTelintec/telintec_agents.git`, carpeta `knowledge/help/`: aquí están las guías en producción, el formato y el ejemplo. **El front no modifica este repositorio ni ningún otro: escribe en el suyo** (ver Entrega). Plan, grupos y orden: `docs/planes/guias_webapp_plan.md` en GUITelintec (`P-256` proceso por pantalla, `P-257` barrido inicial, `P-258` acceso).
+- **Ejemplo de referencia:** [`almacen.md`](almacen.md), hecha desde lo que está desplegado en producción (módulos Almacén, Sucursal e Inventario de Almacén): copia su encabezado, su estructura por pantalla y su nivel de detalle.
+- **Fuente:** lo que el usuario ve en producción (rama `main` del front). Lo que todavía está solo en tu rama entra a la guía cuando salga a prod.
+- **Qué se escribe:** qué puede hacer la persona en cada pantalla y cómo: botones, pestañas, columnas, estados y mensajes con su texto exacto, y quién entra (permisos del catálogo con nombre completo). Nada de rutas del API, configuraciones, componentes, hooks ni ids de pendientes. Lo que no puedas confirmar en pantalla: **(por confirmar)**.
+- **Cuándo:** cada pendiente que cree o modifique una pantalla actualiza la sección de esa pantalla (y `rutas:` si cambia la dirección) antes de reportarlo como hecho. Pantalla nueva en un módulo sin guía → archivo nuevo con el encabezado de arriba y fila en la tabla de este README.
+- **Escalonado:** una pantalla o un grupo chico (un módulo) por sesión; nunca varias guías en una misma sesión, para cuidar el consumo de tokens.
+- **Antes de entregar:** encabezado completo (`modulo` = nombre del archivo, `rutas` con los prefijos de sus pantallas, `permisos` como `App.Department.<x>`), ≤ ~1 200 palabras, UTF-8 y saltos de línea LF. Las pruebas del cargador las corre el back al subirlas a producción.
+- **Entrega:** todo en **tu propio repositorio** (`telintec_webapp`), en una **carpeta dedicada y versionada**, por ejemplo `guias-asistente/` en la raíz (no dentro de `docs/`, que está en su `.gitignore` y no llega a nadie), con los mismos nombres de archivo que `knowledge/help/` (`almacen.md`, `sm.md`, …), y una línea en tu reporte de avance con el grupo cubierto. Avisa el nombre de la carpeta la primera vez.
+- **Paso a producción (lo hace el usuario, no el front):** copiar los `.md` de esa carpeta a `knowledge/help/` de este repo (mismo nombre, reemplazar), `pytest tests/test_knowledge.py`, `python scripts/sync_kb.py` si el vector store está activo, y reiniciar el servicio `telintec-agents`.
