@@ -15,6 +15,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+from agents_service.agents.sales import OFF_TOPIC_TEXT
 from agents_service.config import load_settings
 from agents_service.context import AGENT_SALES, RequestContext
 from agents_service.main import create_app
@@ -105,7 +106,8 @@ def test_live_conversation(dev_settings):
         assert r2.status_code == 200, r2.text
         texts2 = _assistant_texts(_events(r2.text))
         print("\n--- Robotín (fuera de tema) ---\n" + "\n".join(texts2))
-        assert texts2
+        # el guardia deja pasar si el modelo nano falla (403, red); sin la igualdad la prueba no lo nota
+        assert texts2 == [OFF_TOPIC_TEXT], "no disparo el guardrail (busca 'guardrail fallo' en el log)"
     import asyncio
 
     async def clean():

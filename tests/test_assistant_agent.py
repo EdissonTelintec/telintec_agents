@@ -79,6 +79,7 @@ async def test_agent_tools_and_dynamic_prompt(settings, base: HelpBase):
     s = dataclasses.replace(settings, openai_api_key_assistant="sk-prueba", openai_vector_store_id="vs_123")
     agent = build_assistant_agent(s, base)
     assert agent.name == AGENT_NAME and len(agent.input_guardrails) == 1
+    assert agent.input_guardrails[0].run_in_parallel is False  # el guardia decide antes de que conteste el agente
     assert [t.name for t in agent.tools if isinstance(t, FunctionTool)] == ["leer_guia"]
     assert any(isinstance(t, FileSearchTool) and t.vector_store_ids == ["vs_123"] for t in agent.tools)
     tool = next(t for t in agent.tools if isinstance(t, FunctionTool))

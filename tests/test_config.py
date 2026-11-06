@@ -26,7 +26,7 @@ def test_defaults_dev(tmp_path: Path):
     s = load_settings(env_file=tmp_path / "no.env", environ=BASE)
     assert s.environment == "dev"
     assert s.token_kids == ("lambda", "dev")
-    assert s.model == "gpt-5.4-mini" and s.model_guardrail == "gpt-5.4-nano"
+    assert s.model == "gpt-5.4-mini" and s.model_guardrail == "gpt-6-luna"
     assert s.limit_messages_per_conversation == 30
     assert s.db_agents == "sql_telintec_mod_agents"
     assert s.cors_origins == ()

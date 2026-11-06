@@ -83,7 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.openai_api_key_assistant:
         from agents import set_tracing_export_api_key
 
-        from agents_service.agents.assistant import build_assistant_agent
+        from agents_service.agents.assistant import GuideCitationConverter, build_assistant_agent
         from agents_service.agents.assistant import fixed_text as assistant_fixed_text
         from agents_service.knowledge import HelpBase
 
@@ -98,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.limits,
             agent_factory=lambda _ctx: assistant_agent,
             fixed_text=lambda kind: assistant_fixed_text(kind, settings),
+            converter=GuideCitationConverter(help_base),
         )
         if not settings.openai_api_key_sales:
             # la llave de traces del SDK es global: con las dos llaves se exporta con la de ventas

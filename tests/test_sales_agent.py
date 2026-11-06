@@ -38,6 +38,7 @@ def test_build_agent_tools_and_guardrail(settings):
     assert agent.name == AGENT_NAME
     assert {t.name for t in agent.tools} == {"buscar_productos", "detalle_producto", "registrar_solicitud"}
     assert len(agent.input_guardrails) == 1
+    assert agent.input_guardrails[0].run_in_parallel is False  # el guardia decide antes de que conteste el agente
     assert agent.model_settings.max_tokens == 123
     from agents import FunctionTool
 

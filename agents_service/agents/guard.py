@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Guardrail de tema compartido por los agentes: un agente con el modelo nano clasifica el ultimo
-mensaje del usuario y, si no es del tema, dispara el tripwire (el servidor de ChatKit responde el
-texto fijo "off_topic"). Si el guardia falla (modelo sin acceso, red), deja pasar: el agente
-principal ya tiene sus propias reglas en el prompt.
+"""Guardrail de tema compartido por los agentes: un agente con el modelo del guardia
+(`OPENAI_MODEL_GUARDRAIL`) clasifica el ultimo mensaje del usuario y, si no es del tema, dispara el
+tripwire (el servidor de ChatKit responde el texto fijo "off_topic"). Corre ANTES del agente, no en
+paralelo (el default del SDK): en paralelo, si el guardia tarda mas, el agente alcanza a contestar lo
+fuera de tema (se transmite y se cobra) y despues llega el texto fijo. Si el guardia falla (modelo
+sin acceso, red), deja pasar: el agente principal ya tiene sus propias reglas en el prompt.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from typing import Any
 
 from agents import Agent, GuardrailFunctionOutput, InputGuardrail, ModelSettings, RunContextWrapper, Runner, input_guardrail
 from agents.models.interface import Model
+from openai.types.shared import Reasoning
 from pydantic import BaseModel, Field
 
 
@@ -42,10 +45,12 @@ def build_topic_guardrail(name: str, instructions: str, model: Model, log: loggi
         instructions=instructions,
         output_type=TopicVerdict,
         model=model,
-        model_settings=ModelSettings(max_tokens=max_tokens),
+        # sin razonamiento: gpt-6-luna razona "medium" por defecto y se comeria los 80 tokens (veredicto
+        # cortado -> el guardia falla y deja pasar); gpt-5.4-nano tambien acepta "none"
+        model_settings=ModelSettings(max_tokens=max_tokens, reasoning=Reasoning(effort="none")),
     )
 
-    @input_guardrail
+    @input_guardrail(run_in_parallel=False)
     async def tema_guardrail(ctx: RunContextWrapper[Any], agent: Agent[Any], input_items: str | list[Any]) -> GuardrailFunctionOutput:
         text = last_user_text(input_items).strip()
         if not text or len(text) < 3:

@@ -3,7 +3,8 @@
 
 - Explica como se usa la webapp con las guias de `knowledge/help/`: el indice de modulos va en el
   prompt, la guia de la pantalla actual (`X-Page-Context`) va completa y `leer_guia` trae cualquier
-  otra. Con `OPENAI_VECTOR_STORE_ID` ademas busca con File Search (scripts/sync_kb.py).
+  otra. Con `OPENAI_VECTOR_STORE_ID` ademas busca con File Search (scripts/sync_kb.py); sus citas
+  muestran el titulo de la guia, no el nombre del archivo (`GuideCitationConverter`).
 - Sabe quien es el usuario (nombre y permisos del JWT) y a que modulos puede entrar.
 - Solo espanol. No ejecuta acciones ni consulta datos (eso llega en F4). Guardrail de tema con nano.
 - Cliente de OpenAI propio con la llave del proyecto del asistente.
@@ -12,12 +13,15 @@
 from __future__ import annotations
 
 import logging
+from pathlib import PurePath
 from typing import Any
 
 from agents import Agent, FileSearchTool, ModelSettings, RunContextWrapper, Tool, function_tool
 from agents.models.openai_responses import OpenAIResponsesModel
-from chatkit.agents import AgentContext
+from chatkit.agents import AgentContext, ResponseStreamConverter
+from chatkit.types import Annotation, FileSource
 from openai import AsyncOpenAI
+from openai.types.responses.response_output_text import AnnotationFileCitation
 
 from agents_service.agents.guard import build_topic_guardrail
 from agents_service.auth import permission_names
@@ -29,6 +33,24 @@ log = logging.getLogger("agents.assistant")
 
 AGENT_NAME = "Asistente de la webapp"
 MAX_INLINE_CHARS = 12_000  # la guia de la pantalla actual va completa en el prompt hasta este tamano
+
+
+class GuideCitationConverter(ResponseStreamConverter):
+    """Cita de File Search -> fuente con el titulo de la guia (`almacen.md` -> "Almacén").
+
+    sync_kb.py sube cada guia como `<modulo>.md`; un archivo que no es guia conserva su nombre.
+    """
+
+    def __init__(self, help_base: HelpBase):
+        super().__init__()
+        self.help_base = help_base
+
+    async def file_citation_to_annotation(self, file_citation: AnnotationFileCitation) -> Annotation | None:
+        filename = file_citation.filename
+        if not filename:
+            return None
+        doc = self.help_base.get(PurePath(filename).stem)
+        return Annotation(source=FileSource(filename=filename, title=doc.title if doc else filename), index=file_citation.index)
 
 OFF_TOPIC_TEXT = (
     "Soy el asistente de la webapp de Telintec: te explico cómo usar sus pantallas (menús, botones, "
