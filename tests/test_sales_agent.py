@@ -57,6 +57,24 @@ def test_last_user_text():
     assert _last_user_text([]) == ""
 
 
+def test_last_exchange_and_guard_input():
+    # el guardia ve la pregunta del agente: sin ella, "ahi te pase los datos" parecia fuera de tema (Telegram, 2026-11-06)
+    from agents_service.agents.guard import CONTEXT_CHARS, guard_input, last_exchange
+
+    items = [
+        {"role": "user", "content": "busco cámaras"},
+        {"role": "assistant", "content": [{"type": "output_text", "text": "¿Me compartes tus datos?"}]},
+        {"role": "user", "content": [{"type": "input_text", "text": "Edisson, 8127668300"}]},
+    ]
+    assert last_exchange(items) == ("¿Me compartes tus datos?", "Edisson, 8127668300")
+    assert last_exchange([{"role": "user", "content": "hola"}]) == ("", "hola")
+    assert last_exchange("hola") == ("", "hola") and last_exchange([]) == ("", "")
+    assert guard_input("", "hola") == "hola"
+    text = guard_input("#" * 2000 + "¿Me compartes tus datos?", "Edisson")
+    assert text.endswith("Mensaje del usuario a clasificar:\nEdisson") and "¿Me compartes tus datos?" in text
+    assert text.count("#") == CONTEXT_CHARS - len("¿Me compartes tus datos?")  # solo la cola del mensaje del agente
+
+
 def test_fixed_texts(settings):
     s = dataclasses.replace(settings, sales_emails=("ventas@telintec.com.mx",))
     assert s.sales_whatsapp_url in fixed_text("limit", s) and "ventas@telintec.com.mx" in fixed_text("limit", s)
