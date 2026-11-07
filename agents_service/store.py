@@ -9,14 +9,17 @@
 - `agent_messages` guarda cada item tal cual (`payload` JSON) con `seq` por conversacion.
 - Adjuntos: deshabilitados (el widget no los ofrece).
 
-Las fechas se guardan en UTC naive (DATETIME) y se devuelven con tzinfo UTC.
+Las fechas se guardan en hora local del servicio (`SERVICE_TIMEZONE`, America/Mexico_City) naive, como el
+resto del esquema y el API, y se devuelven con esa tzinfo. Un datetime naive se toma como hora del sistema
+(ChatKit usa `datetime.now()`; prod corre con TZ=America/Mexico_City); uno con tzinfo se convierte.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from chatkit.store import Store
 from chatkit.types import Attachment, Page, ThreadItem, ThreadMetadata, ThreadStatus
@@ -41,30 +44,32 @@ class ItemNotFound(LookupError):
     pass
 
 
-def _to_db(dt: datetime) -> datetime:
-    if dt.tzinfo is not None:
-        return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
+DEFAULT_TIMEZONE = "America/Mexico_City"
 
 
-def _from_db(dt: datetime) -> datetime:
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+def _to_db(dt: datetime, tz: ZoneInfo) -> datetime:
+    """A hora local del servicio, naive. `astimezone` en un naive lo toma como hora del sistema."""
+    return dt.astimezone(tz).replace(tzinfo=None)
+
+
+def _from_db(dt: datetime, tz: ZoneInfo) -> datetime:
+    return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt
 
 
 class MySQLStore(Store[RequestContext]):
-    def __init__(self, db: Database, schema: str = "sql_telintec_mod_agents"):
+    def __init__(self, db: Database, schema: str = "sql_telintec_mod_agents", timezone: str = DEFAULT_TIMEZONE):
         self._db = db
+        self._tz = ZoneInfo(timezone)
         self._conv = f"{schema}.agent_conversations"
         self._msg = f"{schema}.agent_messages"
 
     # ---- conversaciones --------------------------------------------------
 
-    @staticmethod
-    def _row_to_thread(row: dict[str, Any]) -> ThreadMetadata:
+    def _row_to_thread(self, row: dict[str, Any]) -> ThreadMetadata:
         meta = json.loads(row["chatkit_meta"]) if row.get("chatkit_meta") else {}
         return ThreadMetadata(
             id=row["conversation_id"],
-            created_at=_from_db(row["created_at"]),
+            created_at=_from_db(row["created_at"], self._tz),
             title=row.get("title"),
             status=_status_adapter.validate_python(meta.get("status") or {"type": "active"}),
             allowed_image_domains=meta.get("allowed_image_domains"),
@@ -106,7 +111,7 @@ class MySQLStore(Store[RequestContext]):
                 thread.title,
                 meta,
                 business_status,
-                _to_db(thread.created_at),
+                _to_db(thread.created_at, self._tz),
             ),
         )
 
@@ -172,7 +177,7 @@ class MySQLStore(Store[RequestContext]):
         await self._db.execute(
             f"INSERT INTO {self._msg} (message_id, conversation_id, seq, item_type, payload, created_at) "
             f"SELECT %s, %s, COALESCE(MAX(seq), 0) + 1, %s, %s, %s FROM {self._msg} WHERE conversation_id = %s",
-            (item.id, thread_id, item.type, payload, _to_db(item.created_at), thread_id),
+            (item.id, thread_id, item.type, payload, _to_db(item.created_at, self._tz), thread_id),
         )
 
     async def save_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
@@ -202,14 +207,14 @@ class MySQLStore(Store[RequestContext]):
         )
 
     async def last_activity(self, thread_id: str) -> datetime | None:
-        """Fecha (UTC naive) del ultimo mensaje de la conversacion, o de su creacion si no hay mensajes."""
+        """Fecha (con tzinfo) del ultimo mensaje de la conversacion, o de su creacion si no hay mensajes."""
         row = await self._db.fetch_one(
             f"SELECT COALESCE(MAX(m.created_at), c.created_at) AS last FROM {self._conv} c "
             f"LEFT JOIN {self._msg} m ON m.conversation_id = c.conversation_id "
             "WHERE c.conversation_id = %s GROUP BY c.conversation_id",
             (thread_id,),
         )
-        return row["last"] if row and row["last"] else None
+        return _from_db(row["last"], self._tz) if row and row["last"] else None
 
     async def count_items(self, thread_id: str, item_type: str | None = None) -> int:
         """Mensajes de una conversacion (para el tope por conversacion)."""

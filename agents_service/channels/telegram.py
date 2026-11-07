@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -146,12 +146,12 @@ class TelegramChannel:
         current = page.data[0] if page.data else None
         if current is not None and current.status.type == "active" and not reset:
             last = await self.store.last_activity(current.id)
-            if last is not None and datetime.utcnow() - last < self.session:
+            if last is not None and datetime.now(timezone.utc) - last < self.session:
                 return current
         if current is not None and current.status.type == "active":
             current.status = ClosedStatus(reason="nueva conversación" if reset else "inactividad")
             await self.store.save_thread(current, context)
-        thread = ThreadMetadata(id=self.store.generate_thread_id(context), created_at=datetime.utcnow())
+        thread = ThreadMetadata(id=self.store.generate_thread_id(context), created_at=datetime.now(timezone.utc))
         await self.store.save_thread(thread, context)
         return thread
 

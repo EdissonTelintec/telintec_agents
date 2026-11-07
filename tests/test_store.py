@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from chatkit.types import (
@@ -19,7 +20,7 @@ from chatkit.types import (
 from agents_service.config import load_settings
 from agents_service.context import AGENT_SALES, RequestContext, hash_ip
 from agents_service.db import Database
-from agents_service.store import ItemNotFound, MySQLStore, ThreadNotFound
+from agents_service.store import DEFAULT_TIMEZONE, ItemNotFound, MySQLStore, ThreadNotFound
 
 
 @pytest.fixture
@@ -72,6 +73,14 @@ async def test_thread_and_items_roundtrip(store: MySQLStore):
         loaded = await store.load_thread(thread.id, ctx)
         assert loaded.id == thread.id and loaded.title == "prueba" and loaded.status.type == "active"
         assert loaded.created_at.tzinfo is not None
+        # en la BD queda hora de Mexico naive (como el resto del esquema), y al leerla no se corre 6 h
+        assert abs(loaded.created_at - thread.created_at) < timedelta(seconds=2)
+        row = await store._db.fetch_one(f"SELECT created_at FROM {store._conv} WHERE conversation_id = %s", (thread.id,))
+        local_now = datetime.now(ZoneInfo(DEFAULT_TIMEZONE)).replace(tzinfo=None)
+        assert row and abs(row["created_at"] - local_now) < timedelta(minutes=1)
+        # un naive (ChatKit usa datetime.now()) se toma como hora del sistema
+        last = await store.last_activity(thread.id)
+        assert last is not None and last.tzinfo is not None and abs(datetime.now(timezone.utc) - last) < timedelta(minutes=1)
 
         await store.add_thread_item(thread.id, _user(thread.id, "hola", 1), ctx)
         await store.add_thread_item(thread.id, _assistant(thread.id, "¡Hola! Soy Robotín", 1), ctx)

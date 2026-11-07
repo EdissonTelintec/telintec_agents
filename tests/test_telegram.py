@@ -117,8 +117,8 @@ async def test_conversation_lifecycle_and_turns(env, monkeypatch):
         # sin texto: aviso fijo
         assert await channel.handle_update({"update_id": 4, "message": {"chat": {"id": 1}, "from": {"id": user_id}, "sticker": {}}}) == UNSUPPORTED_TEXT
         # 24 h sin actividad: conversacion nueva y la vieja cerrada
-        await db.execute(f"UPDATE {settings.db_agents}.agent_messages SET created_at = %s WHERE conversation_id = %s", (datetime.utcnow() - timedelta(hours=30), t1.id))
-        await db.execute(f"UPDATE {settings.db_agents}.agent_conversations SET created_at = %s WHERE conversation_id = %s", (datetime.utcnow() - timedelta(hours=31), t1.id))
+        await db.execute(f"UPDATE {settings.db_agents}.agent_messages SET created_at = %s WHERE conversation_id = %s", (datetime.now() - timedelta(hours=30), t1.id))
+        await db.execute(f"UPDATE {settings.db_agents}.agent_conversations SET created_at = %s WHERE conversation_id = %s", (datetime.now() - timedelta(hours=31), t1.id))
         await channel.handle_update({"update_id": 5, "message": {"chat": {"id": 1}, "from": {"id": user_id}, "text": "sigo aquí"}})
         t2 = (await store.load_threads(1, None, "desc", ctx)).data[0]
         created.append(t2.id)

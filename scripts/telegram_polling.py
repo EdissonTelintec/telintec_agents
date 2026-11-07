@@ -35,7 +35,7 @@ async def main() -> int:
     try:
         me = await client.get_me()
         print(f"bot @{me.get('username')} · entorno {settings.environment} · Ctrl+C para salir")
-        channel = TelegramChannel(client, MySQLStore(db, settings.db_agents), Limits(db, settings), settings,
+        channel = TelegramChannel(client, MySQLStore(db, settings.db_agents, settings.timezone), Limits(db, settings), settings,
                                   build_sales_agent(settings, db), fixed_text=lambda k: fixed_text(k, settings),
                                   session_hours=settings.telegram_session_hours)
         await channel.poll_forever()

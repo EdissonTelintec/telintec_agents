@@ -36,7 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Telintec agents", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.settings = settings
     app.state.db = Database(settings)
-    app.state.store = MySQLStore(app.state.db, settings.db_agents)
+    app.state.store = MySQLStore(app.state.db, settings.db_agents, settings.timezone)
     app.state.limits = Limits(app.state.db, settings)
     app.state.verifier = TokenVerifier(
         settings.token_keys_dir,
