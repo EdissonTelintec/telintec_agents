@@ -22,6 +22,9 @@ from agents_service.store import MySQLStore
 log = logging.getLogger("agents")
 
 PRODUCT_IMAGE_DOMAINS = ["ftp3.syscom.mx"]
+CORS_HEADERS = ["Authorization", "Content-Type", "X-Page-Context"]
+# Solo en dev: el front corriendo en la misma maquina (`next dev`, http o https, cualquier puerto).
+DEV_LOCAL_ORIGINS = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -106,12 +109,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     else:
         log.warning("OPENAI_API_KEY_ASSISTANT no esta: /agents/assistant/chatkit respondera 503")
 
-    if settings.cors_origins:
+    dev = settings.environment == "dev"
+    if settings.cors_origins or dev:
+        # prod: solo la lista cerrada de CORS_ORIGINS. dev: ademas cualquier localhost, y el preflight de
+        # Private Network Access de Chrome (pagina en una IP de la red llamando a 127.0.0.1).
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
+            allow_origin_regex=DEV_LOCAL_ORIGINS if dev else None,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Page-Context"],
+            allow_headers=CORS_HEADERS,
+            allow_private_network=dev,
             max_age=600,
         )
 

@@ -66,7 +66,8 @@ python -m venv .venv
 En la webapp: `NEXT_PUBLIC_AGENTS_URL=http://127.0.0.1:8100/agents`.
 
 - Tiene las mismas rutas, el mismo protocolo de ChatKit y el mismo 401 con envelope que el servicio. Las conversaciones viven en memoria y se pierden al apagar.
-- CORS: acepta cualquier `http://localhost:<puerto>`; para otro origen usa `--origin`. `--delay 0` quita la pausa entre palabras y `--host 0.0.0.0` lo abre a la red local.
+- CORS abierto: acepta cualquier origen (`http`/`https`, `localhost`, IP de la red, el dominio de Amplify), cualquier encabezado y `credentials: "include"`. El servicio real es más estricto: solo su lista de orígenes (en `dev`, además cualquier `localhost`) y los encabezados `Authorization`, `Content-Type` y `X-Page-Context`. Si el front manda otro encabezado, el mock lo deja pasar pero avisa en la consola, porque contra prod fallaría.
+- `--delay 0` quita la pausa entre palabras y `--host 0.0.0.0` lo abre a la red local.
 - Asistente: manda el JWT del login crudo en `Authorization`, sin `Bearer`. El simulado revisa ES256, `exp`/`iat` y vigencia, **pero no la firma**. Responde con el usuario, los permisos y la guía que le toca a `X-Page-Context`, para confirmar que los encabezados llegan bien.
 - Cada caso se provoca con una palabra en el mensaje:
 

@@ -3,7 +3,6 @@
 
     python scripts/mock_server.py                      # http://127.0.0.1:8100/agents
     python scripts/mock_server.py --port 8200 --delay 0
-    python scripts/mock_server.py --origin http://mi-pc.local:3000
 
 En la webapp: `NEXT_PUBLIC_AGENTS_URL=http://127.0.0.1:8100/agents`. Detalle en `agents_service/mock.py`.
 """
@@ -26,7 +25,6 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirlo a la red local")
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help="segundos entre palabras del stream")
-    parser.add_argument("--origin", action="append", default=[], help="origen extra para CORS (localhost ya pasa)")
     args = parser.parse_args()
 
     base = f"http://{'127.0.0.1' if args.host == '0.0.0.0' else args.host}:{args.port}/agents"
@@ -35,7 +33,7 @@ def main() -> int:
     print(f"  asistente:  POST {base}/assistant/chatkit (Authorization: <JWT crudo>, X-Page-Context: <ruta>)")
     print(f"  NEXT_PUBLIC_AGENTS_URL={base}")
     print("  " + SCENARIOS_HELP.replace("**", ""), flush=True)
-    uvicorn.run(create_mock_app(delay=args.delay, origins=tuple(args.origin)), host=args.host, port=args.port)
+    uvicorn.run(create_mock_app(delay=args.delay), host=args.host, port=args.port)
     return 0
 
 

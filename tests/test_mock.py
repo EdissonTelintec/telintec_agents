@@ -5,7 +5,8 @@
   historial del hilo, sin lista de conversaciones para el visitante;
 - asistente: mismo 401 que el servicio, token sin verificar firma, eco de `X-Page-Context` y del token,
   cita de la guia, lista de conversaciones solo del usuario;
-- CORS: localhost pasa, otro origen no.
+- CORS abierto (cualquier origen, credenciales, Private Network Access); un encabezado fuera del contrato
+  pasa con aviso en el log.
 """
 
 from __future__ import annotations
@@ -161,8 +162,24 @@ def test_assistant_echoes_page_and_user_and_lists_only_own_threads(client):
     ]
 
 
-def test_cors_accepts_localhost_only(client):
+def test_cors_open(client, caplog):
     preflight = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,content-type,x-page-context"}
-    r = client.options(ASSISTANT, headers={"Origin": "http://localhost:3000", **preflight})
-    assert r.status_code == 200 and r.headers["access-control-allow-origin"] == "http://localhost:3000"
-    assert client.options(SALES, headers={"Origin": "https://otro.example", **preflight}).status_code == 400
+    for origin in ("http://localhost:3000", "https://localhost:3000", "http://192.168.1.50:3000", "https://otro.example"):
+        r = client.options(ASSISTANT, headers={"Origin": origin, **preflight})
+        assert r.status_code == 200 and r.headers["access-control-allow-origin"] == origin
+        assert r.headers["access-control-allow-credentials"] == "true"
+    assert not caplog.records  # los encabezados del contrato no avisan
+
+    # Private Network Access de Chrome (pagina en una IP de la red llamando a 127.0.0.1)
+    pna = {"Origin": "http://192.168.1.50:3000", "Access-Control-Request-Private-Network": "true", **preflight}
+    r = client.options(SALES, headers=pna)
+    assert r.status_code == 200 and r.headers["access-control-allow-private-network"] == "true"
+
+    # un encabezado fuera del contrato pasa, pero avisa que el servicio real lo rechazaria
+    extra = {"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type,X-Requested-With"}
+    r = client.options(SALES, headers=extra)
+    assert r.status_code == 200 and "x-requested-with" in r.headers["access-control-allow-headers"].lower()
+    assert any("x-requested-with" in rec.getMessage() for rec in caplog.records)
+
+    r = client.post(SALES, json=LIST, headers={"Origin": "https://otro.example"})
+    assert r.headers["access-control-allow-origin"] == "https://otro.example"

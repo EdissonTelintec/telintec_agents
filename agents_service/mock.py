@@ -11,7 +11,10 @@
   fijos (tope, fuera de tema, error) llegan en un solo evento, como en el servicio real.
 - `Authorization`: JWT crudo ES256 con `exp` e `iat`, vigente y de hasta 24 h. **No verifica la firma ni
   el `kid`**: sirve cualquier token del login. Sin token, con `Bearer`, HS256 o vencido -> el mismo 401.
-- CORS: cualquier `http://localhost:<puerto>` o `http://127.0.0.1:<puerto>`, mas los `origins` que se pasen.
+- CORS abierto: cualquier origen y cualquier encabezado, con credenciales y con el preflight de Private
+  Network Access de Chrome. **Aqui no se cumple lo de "funciona contra prod"**: el servicio solo acepta su
+  lista de origenes (en dev, ademas cualquier localhost) y los encabezados de `SERVICE_CORS_HEADERS`; si el
+  front pide otro encabezado en el preflight, el mock lo avisa en la consola.
 - Nunca escribe en la BD, no llama a OpenAI ni avisa a ventas.
 """
 
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -51,6 +55,7 @@ from chatkit.types import (
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from agents_service.agents import assistant as assistant_texts
 from agents_service.agents import sales as sales_texts
@@ -61,8 +66,10 @@ from agents_service.knowledge import HelpBase
 from agents_service.routers import assistant, health, sales
 from agents_service.store import ItemNotFound, ThreadNotFound
 
-LOCAL_ORIGINS = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+log = logging.getLogger("agents.mock")
+
 PRODUCT_IMAGE_DOMAINS = ["ftp3.syscom.mx"]  # el mismo que main.PRODUCT_IMAGE_DOMAINS
+SERVICE_CORS_HEADERS = frozenset({"authorization", "content-type", "x-page-context"})  # main.CORS_HEADERS
 DEFAULT_DELAY = 0.03  # segundos entre palabras del stream
 
 SCENARIOS_HELP = (
@@ -371,7 +378,29 @@ def load_settings_for_mock() -> Settings:
     return load_settings(env_file=Path(__file__).with_name("__sin_env__"), environ=environ)
 
 
-def create_mock_app(delay: float = DEFAULT_DELAY, origins: tuple[str, ...] = ()) -> FastAPI:
+class WarnServiceCorsHeaders:
+    """Avisa en el log cuando un preflight pide un encabezado que el servicio real rechazaria."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] == "OPTIONS":
+            for name, value in scope["headers"]:
+                if name == b"access-control-request-headers":
+                    requested = {h.strip().lower() for h in value.decode("latin-1").split(",")} - {""}
+                    extra = sorted(requested - SERVICE_CORS_HEADERS)
+                    if extra:
+                        log.warning(
+                            "el front pide los encabezados %s: el mock los deja pasar, el servicio real los "
+                            "rechaza en el preflight (solo acepta %s)",
+                            ", ".join(extra),
+                            ", ".join(sorted(SERVICE_CORS_HEADERS)),
+                        )
+        await self.app(scope, receive, send)
+
+
+def create_mock_app(delay: float = DEFAULT_DELAY) -> FastAPI:
     settings = load_settings_for_mock()
     help_base = HelpBase.load()
     store = MemoryStore()
@@ -386,14 +415,18 @@ def create_mock_app(delay: float = DEFAULT_DELAY, origins: tuple[str, ...] = ())
     )
     app.state.assistant_server = MockChatKitServer(store, AGENT_ASSISTANT, settings, help_base, delay)
 
+    # El regex `.*` en vez de `*` para que el origen se refleje tal cual: con `*` el navegador rechaza las
+    # peticiones con `credentials: "include"`.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=list(origins),
-        allow_origin_regex=LOCAL_ORIGINS,
+        allow_origin_regex=r".*",
+        allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Page-Context"],
+        allow_headers=["*"],
+        allow_private_network=True,
         max_age=600,
     )
+    app.add_middleware(WarnServiceCorsHeaders)  # el ultimo agregado queda por fuera: ve el preflight
 
     @app.exception_handler(Unauthorized)
     async def _unauthorized(_: Request, exc: Unauthorized) -> JSONResponse:
