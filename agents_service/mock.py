@@ -69,7 +69,11 @@ from agents_service.store import ItemNotFound, ThreadNotFound
 log = logging.getLogger("agents.mock")
 
 PRODUCT_IMAGE_DOMAINS = ["ftp3.syscom.mx"]  # el mismo que main.PRODUCT_IMAGE_DOMAINS
-SERVICE_CORS_HEADERS = frozenset({"authorization", "content-type", "x-page-context"})  # main.CORS_HEADERS
+# main.CORS_HEADERS mas los simples que Starlette siempre deja pasar
+SERVICE_CORS_HEADERS = frozenset(
+    {"authorization", "content-type", "x-page-context", "chatkit-frame-instance-id"}
+    | {"accept", "accept-language", "content-language"}
+)
 DEFAULT_DELAY = 0.03  # segundos entre palabras del stream
 
 SCENARIOS_HELP = (

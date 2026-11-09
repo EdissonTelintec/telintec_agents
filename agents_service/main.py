@@ -22,7 +22,9 @@ from agents_service.store import MySQLStore
 log = logging.getLogger("agents")
 
 PRODUCT_IMAGE_DOMAINS = ["ftp3.syscom.mx"]
-CORS_HEADERS = ["Authorization", "Content-Type", "X-Page-Context"]
+# ChatKit-Frame-Instance-Id lo agrega el propio componente de ChatKit en cada peticion (el servicio no lo lee).
+# Starlette suma siempre los "simples": Accept, Accept-Language, Content-Language.
+CORS_HEADERS = ["Authorization", "Content-Type", "X-Page-Context", "ChatKit-Frame-Instance-Id"]
 # Solo en dev: el front corriendo en la misma maquina (`next dev`, http o https, cualquier puerto).
 DEV_LOCAL_ORIGINS = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 

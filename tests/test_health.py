@@ -41,9 +41,16 @@ def test_cors_allowlist(settings, sign):
         assert "access-control-allow-origin" not in bad.headers
 
 
-def _preflight(client: TestClient, origin: str, headers: str = "authorization,content-type,x-page-context"):
+# El preflight que manda el componente de ChatKit (capturado en el navegador, docs/error-de-chatkit.md):
+# chatkit-frame-instance-id lo agrega ChatKit por su cuenta.
+CHATKIT_PREFLIGHT_HEADERS = "accept-language,authorization,chatkit-frame-instance-id,content-type,x-page-context"
+
+
+def _preflight(
+    client: TestClient, origin: str, headers: str = CHATKIT_PREFLIGHT_HEADERS, path: str = "/agents/assistant/chatkit"
+):
     return client.options(
-        "/agents/assistant/chatkit",
+        path,
         headers={"Origin": origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": headers},
     )
 
@@ -67,8 +74,12 @@ def test_cors_dev_without_list(settings):
 
 def test_cors_prod_is_closed_list(settings):
     with TestClient(create_app(replace(settings, environment="prod"))) as client:
-        assert _preflight(client, "https://telintec.mx").status_code == 200
+        for path in ("/agents/assistant/chatkit", "/agents/sales/chatkit"):
+            r = _preflight(client, "https://telintec.mx", path=path)
+            assert r.status_code == 200, r.text
+            assert "chatkit-frame-instance-id" in r.headers["access-control-allow-headers"].lower()
         assert _preflight(client, "http://localhost:3000").status_code == 400
+        assert _preflight(client, "https://telintec.mx", "content-type,x-requested-with").status_code == 400
         pna = client.options(
             "/agents/health",
             headers={

@@ -163,7 +163,9 @@ def test_assistant_echoes_page_and_user_and_lists_only_own_threads(client):
 
 
 def test_cors_open(client, caplog):
-    preflight = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,content-type,x-page-context"}
+    # el preflight real de ChatKit (docs/error-de-chatkit.md): es del contrato, no avisa
+    chatkit_headers = "accept-language,authorization,chatkit-frame-instance-id,content-type,x-page-context"
+    preflight = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": chatkit_headers}
     for origin in ("http://localhost:3000", "https://localhost:3000", "http://192.168.1.50:3000", "https://otro.example"):
         r = client.options(ASSISTANT, headers={"Origin": origin, **preflight})
         assert r.status_code == 200 and r.headers["access-control-allow-origin"] == origin
