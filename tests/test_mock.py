@@ -119,9 +119,14 @@ def test_sales_quote_is_simulated(client):
 
 
 def test_unknown_thread_is_404(client):
-    # solo en operaciones sin stream; en las de stream el error salta ya dentro del stream (igual que el servicio)
-    r = client.post(SALES, json={"type": "threads.get_by_id", "params": {"thread_id": "thr_noexiste"}})
-    assert r.status_code == 404 and r.json()["msg"] == "Conversación no encontrada"
+    # routers/_chatkit.py es el del servicio: 404 tambien en las operaciones con stream (antes era un 200 cortado)
+    for body in (
+        {"type": "threads.get_by_id", "params": {"thread_id": "thr_noexiste"}},
+        _follow("thr_noexiste", "hola"),
+    ):
+        r = client.post(SALES, json=body)
+        assert r.status_code == 404 and r.json()["msg"] == "Conversación no encontrada"
+        assert r.json()["error"] == "thr_noexiste"
 
 
 def test_assistant_auth_like_the_service(client):
