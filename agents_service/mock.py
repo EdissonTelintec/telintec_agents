@@ -32,7 +32,7 @@ from typing import Protocol
 
 import jwt
 from chatkit.server import ChatKitServer
-from chatkit.store import Store
+from chatkit.store import Store, StoreItemType
 from chatkit.types import (
     Annotation,
     AssistantMessageContent,
@@ -64,7 +64,7 @@ from agents_service.config import Settings, load_settings
 from agents_service.context import AGENT_ASSISTANT, AGENT_SALES, RequestContext
 from agents_service.knowledge import HelpBase
 from agents_service.routers import assistant, health, sales
-from agents_service.store import ItemNotFound, ThreadNotFound
+from agents_service.store import ItemNotFound, ThreadNotFound, is_owner, log_denied, new_id
 
 log = logging.getLogger("agents.mock")
 
@@ -115,34 +115,44 @@ Texto con **negritas**, *cursivas* y `código`.
 class _Thread:
     meta: ThreadMetadata
     agent: int
+    channel: int
     user_ref: str | None
     items: list[ThreadItem] = field(default_factory=list)
 
 
 class MemoryStore(Store[RequestContext]):
     """Store de ChatKit en un dict: mismas reglas de visibilidad que `MySQLStore` (la lista de
-    conversaciones es del mismo usuario y agente; un visitante sin identidad no tiene lista)."""
+    conversaciones es del mismo usuario y agente; un visitante sin identidad no tiene lista; una
+    conversacion ajena se responde como inexistente; ids de 128 bits)."""
 
     def __init__(self) -> None:
         self._threads: dict[str, _Thread] = {}
 
-    def _get(self, thread_id: str) -> _Thread:
+    def generate_thread_id(self, context: RequestContext) -> str:
+        return new_id("thread")
+
+    def generate_item_id(self, item_type: StoreItemType, thread: ThreadMetadata, context: RequestContext) -> str:
+        return new_id(item_type)
+
+    def _get(self, thread_id: str, context: RequestContext) -> _Thread:
         thread = self._threads.get(thread_id)
         if thread is None:
+            raise ThreadNotFound(thread_id)
+        if not is_owner(thread.agent, thread.channel, thread.user_ref, thread_id, context):
+            log_denied(context)
             raise ThreadNotFound(thread_id)
         return thread
 
     async def load_thread(self, thread_id: str, context: RequestContext) -> ThreadMetadata:
-        return self._get(thread_id).meta.model_copy(deep=True)
+        return self._get(thread_id, context).meta.model_copy(deep=True)
 
     async def save_thread(self, thread: ThreadMetadata, context: RequestContext) -> None:
         # ChatKit a veces pasa un `Thread` (con sus items): se guarda solo la metadata, como MySQLStore
         meta = ThreadMetadata.model_validate(thread.model_dump(include=set(ThreadMetadata.model_fields)))
-        existing = self._threads.get(thread.id)
-        if existing is None:
-            self._threads[thread.id] = _Thread(meta, context.agent, context.user_ref)
+        if thread.id not in self._threads:
+            self._threads[thread.id] = _Thread(meta, context.agent, context.channel, context.user_ref)
         else:
-            existing.meta = meta
+            self._get(thread.id, context).meta = meta
 
     async def load_threads(self, limit: int, after: str | None, order: str, context: RequestContext) -> Page[ThreadMetadata]:
         if not context.user_ref:
@@ -152,21 +162,25 @@ class MemoryStore(Store[RequestContext]):
         return _page(mine, after, limit)
 
     async def delete_thread(self, thread_id: str, context: RequestContext) -> None:
-        self._threads.pop(thread_id, None)
+        try:
+            self._get(thread_id, context)
+        except ThreadNotFound:
+            return  # inexistente o ajena: nada que borrar
+        del self._threads[thread_id]
 
     async def load_thread_items(
         self, thread_id: str, after: str | None, limit: int, order: str, context: RequestContext
     ) -> Page[ThreadItem]:
-        items = list(self._get(thread_id).items)
+        items = list(self._get(thread_id, context).items)
         if order == "desc":
             items.reverse()
         return _page(items, after, limit)
 
     async def add_thread_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
-        self._get(thread_id).items.append(copy.deepcopy(item))
+        self._get(thread_id, context).items.append(copy.deepcopy(item))
 
     async def save_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
-        items = self._get(thread_id).items
+        items = self._get(thread_id, context).items
         for i, existing in enumerate(items):
             if existing.id == item.id:
                 items[i] = copy.deepcopy(item)
@@ -174,13 +188,16 @@ class MemoryStore(Store[RequestContext]):
         items.append(copy.deepcopy(item))
 
     async def load_item(self, thread_id: str, item_id: str, context: RequestContext) -> ThreadItem:
-        for item in self._get(thread_id).items:
+        for item in self._get(thread_id, context).items:
             if item.id == item_id:
                 return copy.deepcopy(item)
         raise ItemNotFound(item_id)
 
     async def delete_thread_item(self, thread_id: str, item_id: str, context: RequestContext) -> None:
-        thread = self._get(thread_id)
+        try:
+            thread = self._get(thread_id, context)
+        except ThreadNotFound:
+            return  # como delete_thread: inexistente o ajena, nada que borrar
         thread.items = [i for i in thread.items if i.id != item_id]
 
     async def save_attachment(self, attachment: Attachment, context: RequestContext) -> None:

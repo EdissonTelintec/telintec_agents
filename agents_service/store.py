@@ -8,6 +8,12 @@
   nunca baja un 2.
 - `agent_messages` guarda cada item tal cual (`payload` JSON) con `seq` por conversacion.
 - Adjuntos: deshabilitados (el widget no los ofrece).
+- Dueno de la conversacion (P-260): toda operacion por id exige el mismo agente y canal y, si el contexto
+  trae identidad (`user_ref`), el mismo dueno; el visitante web no tiene identidad, asi que su llave es el
+  id de 128 bits que solo tiene su navegador (los ids cortos de antes no se le sirven). Una conversacion
+  ajena se responde igual que una inexistente: ThreadNotFound al leer o escribir, nada al borrar.
+- Ids de conversacion y de mensaje de 128 bits (`new_id`): los de ChatKit traen 8 hex, adivinables y con
+  choques en la PK global de `agent_messages`.
 
 Las fechas se guardan en hora local del servicio (`SERVICE_TIMEZONE`, America/Mexico_City) naive, como el
 resto del esquema y el API, y se devuelven con esa tzinfo. Un datetime naive se toma como hora del sistema
@@ -17,11 +23,13 @@ resto del esquema y el API, y se devuelven con esa tzinfo. Un datetime naive se 
 from __future__ import annotations
 
 import json
+import logging
+import uuid
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from chatkit.store import Store
+from chatkit.store import Store, StoreItemType, default_generate_id
 from chatkit.types import Attachment, Page, ThreadItem, ThreadMetadata, ThreadStatus
 from pydantic import TypeAdapter
 
@@ -56,6 +64,52 @@ def _from_db(dt: datetime, tz: ZoneInfo) -> datetime:
     return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt
 
 
+# ---- dueno de la conversacion (P-260) ------------------------------------
+
+ID_HEX_LEN = 32  # uuid4 completo = 128 bits; el id por defecto de ChatKit trae 8 hex (32 bits)
+
+log = logging.getLogger("agents.store")
+
+
+def new_id(item_type: StoreItemType) -> str:
+    """Id de 128 bits con el prefijo de ChatKit (thr_, msg_...): no se adivina y no choca en la PK global."""
+    prefix = default_generate_id(item_type).rsplit("_", 1)[0]
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def is_short_id(conversation_id: str) -> bool:
+    """Id de antes de P-260 (8 hex despues del prefijo) o hecho a mano: adivinable."""
+    return len(conversation_id.rsplit("_", 1)[-1]) < ID_HEX_LEN
+
+
+def is_owner(agent: int, channel: int, user_ref: str | None, conversation_id: str, context: RequestContext) -> bool:
+    """Regla del dueno de la conversacion: mismo agente y canal siempre; con identidad (empleado, usuario de
+    Telegram) el mismo `user_ref`; sin identidad (visitante web), una conversacion sin dueno identificado y con
+    id de 128 bits, la llave que solo tiene su navegador."""
+    if agent != context.agent or channel != context.channel:
+        return False
+    if context.user_ref:
+        return user_ref == context.user_ref
+    return user_ref is None and not is_short_id(conversation_id)
+
+
+def log_denied(context: RequestContext) -> None:
+    """Rastro de un intento sobre una conversacion ajena; sin ids ni datos personales."""
+    log.warning(
+        "Conversacion ajena respondida como inexistente (agente %s, canal %s, con identidad: %s)",
+        context.agent,
+        context.channel,
+        bool(context.user_ref),
+    )
+
+
+# Candado del upsert de save_thread: solo el dueno actualiza una fila que ya existe.
+_SAME_OWNER = (
+    "agent_conversations.agent = new.agent AND agent_conversations.channel = new.channel "
+    "AND agent_conversations.user_ref <=> new.user_ref"
+)
+
+
 class MySQLStore(Store[RequestContext]):
     def __init__(self, db: Database, schema: str = "sql_telintec_mod_agents", timezone: str = DEFAULT_TIMEZONE):
         self._db = db
@@ -76,16 +130,40 @@ class MySQLStore(Store[RequestContext]):
             metadata=meta.get("metadata") or {},
         )
 
-    async def load_thread(self, thread_id: str, context: RequestContext) -> ThreadMetadata:
-        row = await self._db.fetch_one(
-            f"SELECT conversation_id, created_at, title, chatkit_meta FROM {self._conv} WHERE conversation_id = %s",
+    def generate_thread_id(self, context: RequestContext) -> str:
+        return new_id("thread")
+
+    def generate_item_id(self, item_type: StoreItemType, thread: ThreadMetadata, context: RequestContext) -> str:
+        return new_id(item_type)
+
+    async def _fetch_conversation(self, thread_id: str) -> dict[str, Any] | None:
+        return await self._db.fetch_one(
+            f"SELECT conversation_id, created_at, title, chatkit_meta, agent, channel, user_ref FROM {self._conv} "
+            "WHERE conversation_id = %s",
             (thread_id,),
         )
+
+    async def _owned(self, thread_id: str, context: RequestContext) -> dict[str, Any]:
+        """La fila de la conversacion si `context` es su dueno. Inexistente o ajena -> ThreadNotFound, igual en
+        los dos casos para no confirmar que el id existe."""
+        row = await self._fetch_conversation(thread_id)
         if row is None:
             raise ThreadNotFound(thread_id)
-        return self._row_to_thread(row)
+        if not is_owner(row["agent"], row["channel"], row["user_ref"], thread_id, context):
+            log_denied(context)
+            raise ThreadNotFound(thread_id)
+        return row
+
+    async def load_thread(self, thread_id: str, context: RequestContext) -> ThreadMetadata:
+        return self._row_to_thread(await self._owned(thread_id, context))
 
     async def save_thread(self, thread: ThreadMetadata, context: RequestContext) -> None:
+        existing = await self._fetch_conversation(thread.id)
+        if existing is not None and not is_owner(
+            existing["agent"], existing["channel"], existing["user_ref"], thread.id, context
+        ):
+            log_denied(context)
+            raise ThreadNotFound(thread.id)
         meta = json.dumps(
             {
                 "status": thread.status.model_dump(mode="json"),
@@ -98,9 +176,12 @@ class MySQLStore(Store[RequestContext]):
         await self._db.execute(
             f"INSERT INTO {self._conv} "
             "(conversation_id, agent, channel, user_ref, ip_hash, page_context, title, chatkit_meta, status, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS new "
-            "ON DUPLICATE KEY UPDATE title = new.title, chatkit_meta = new.chatkit_meta, "
-            "status = IF(agent_conversations.status = 2, 2, new.status)",  # alias `new`: MySQL >= 8.0.19
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS new "  # alias `new`: MySQL >= 8.0.19
+            # el candado repite la regla de arriba en el mismo UPDATE (si otro gana la carrera, no se pisa)
+            "ON DUPLICATE KEY UPDATE "
+            f"title = IF({_SAME_OWNER}, new.title, agent_conversations.title), "
+            f"chatkit_meta = IF({_SAME_OWNER}, new.chatkit_meta, agent_conversations.chatkit_meta), "
+            f"status = IF({_SAME_OWNER} AND agent_conversations.status <> 2, new.status, agent_conversations.status)",
             (
                 thread.id,
                 context.agent,
@@ -140,6 +221,10 @@ class MySQLStore(Store[RequestContext]):
         return Page(data=threads, has_more=has_more, after=threads[-1].id if has_more and threads else None)
 
     async def delete_thread(self, thread_id: str, context: RequestContext) -> None:
+        try:
+            await self._owned(thread_id, context)
+        except ThreadNotFound:
+            return  # inexistente o ajena: nada que borrar, la misma respuesta en los dos casos
         await self._db.execute(f"DELETE FROM {self._conv} WHERE conversation_id = %s", (thread_id,))
 
     # ---- items -----------------------------------------------------------
@@ -147,6 +232,7 @@ class MySQLStore(Store[RequestContext]):
     async def load_thread_items(
         self, thread_id: str, after: str | None, limit: int, order: str, context: RequestContext
     ) -> Page[ThreadItem]:
+        await self._owned(thread_id, context)
         desc = order == "desc"
         args: list[Any] = [thread_id]
         cursor_sql = ""
@@ -173,6 +259,10 @@ class MySQLStore(Store[RequestContext]):
         return _item_adapter.validate_python(data)
 
     async def add_thread_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
+        await self._owned(thread_id, context)
+        await self._insert_item(thread_id, item)
+
+    async def _insert_item(self, thread_id: str, item: ThreadItem) -> None:
         payload = json.dumps(item.model_dump(mode="json"), ensure_ascii=False)
         await self._db.execute(
             f"INSERT INTO {self._msg} (message_id, conversation_id, seq, item_type, payload, created_at) "
@@ -181,11 +271,12 @@ class MySQLStore(Store[RequestContext]):
         )
 
     async def save_item(self, thread_id: str, item: ThreadItem, context: RequestContext) -> None:
+        await self._owned(thread_id, context)
         exists = await self._db.fetch_one(
             f"SELECT 1 AS x FROM {self._msg} WHERE conversation_id = %s AND message_id = %s", (thread_id, item.id)
         )
         if exists is None:
-            await self.add_thread_item(thread_id, item, context)
+            await self._insert_item(thread_id, item)
             return
         payload = json.dumps(item.model_dump(mode="json"), ensure_ascii=False)
         await self._db.execute(
@@ -194,6 +285,7 @@ class MySQLStore(Store[RequestContext]):
         )
 
     async def load_item(self, thread_id: str, item_id: str, context: RequestContext) -> ThreadItem:
+        await self._owned(thread_id, context)
         row = await self._db.fetch_one(
             f"SELECT payload FROM {self._msg} WHERE conversation_id = %s AND message_id = %s", (thread_id, item_id)
         )
@@ -202,6 +294,10 @@ class MySQLStore(Store[RequestContext]):
         return self._row_to_item(row)
 
     async def delete_thread_item(self, thread_id: str, item_id: str, context: RequestContext) -> None:
+        try:
+            await self._owned(thread_id, context)
+        except ThreadNotFound:
+            return  # como delete_thread: inexistente o ajena, nada que borrar
         await self._db.execute(
             f"DELETE FROM {self._msg} WHERE conversation_id = %s AND message_id = %s", (thread_id, item_id)
         )

@@ -104,6 +104,13 @@ def test_limit_path_persists_user_conversation(dev_settings, sign):
         assert mine.status_code == 200 and thread_id in [t["id"] for t in mine.json()["data"]]
         others = client.post(URL, json=LIST, headers={"Authorization": luis})
         assert others.status_code == 200 and thread_id not in [t["id"] for t in others.json()["data"]]
+        # P-260: aun con el id en la mano, Luis no lee la conversacion de Ana (404, como inexistente)
+        for peek in (
+            {"type": "items.list", "params": {"thread_id": thread_id, "limit": 20, "order": "asc", "after": None}},
+            {"type": "threads.get_by_id", "params": {"thread_id": thread_id}},
+        ):
+            r = client.post(URL, json=peek, headers={"Authorization": luis})
+            assert r.status_code == 404 and r.json()["msg"] == "Conversación no encontrada", peek["type"]
 
     async def check_and_clean():
         conv = await app.state.db.fetch_one(
@@ -112,7 +119,7 @@ def test_limit_path_persists_user_conversation(dev_settings, sign):
         )
         assert conv == {"agent": AGENT_ASSISTANT, "channel": CHANNEL_WEB, "user_ref": "emp:7001", "page_context": "/dashboard/rrhh/personal", "ip_hash": None}
         store: MySQLStore = app.state.store
-        await store.delete_thread(thread_id, RequestContext(agent=AGENT_ASSISTANT))
+        await store.delete_thread(thread_id, RequestContext(agent=AGENT_ASSISTANT, user_ref="emp:7001"))
         await app.state.db.close()
 
     asyncio.run(check_and_clean())
@@ -150,7 +157,7 @@ def test_live_conversation(dev_settings, sign):
         print("tokens:", conv)
         assert conv and conv["tokens_in"] > 0
         store: MySQLStore = app.state.store
-        await store.delete_thread(thread_id, RequestContext(agent=AGENT_ASSISTANT))
+        await store.delete_thread(thread_id, RequestContext(agent=AGENT_ASSISTANT, user_ref="emp:7001"))
         await app.state.db.close()
 
     asyncio.run(clean())
